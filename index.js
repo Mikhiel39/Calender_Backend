@@ -129,6 +129,16 @@ app.delete("/api/companies/:id", async (req, res) => {
   }
 });
 
+// Fetch all companies with populated communications
+app.get("/api/communications", async (req, res) => {
+  try {
+    const communication = await Company.find().populate("Communication");
+    res.status(200).json(communication);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching companies", error });
+  }
+});
+
 // Log a new communication action for a company
 app.post("/api/communications", async (req, res) => {
   const {
