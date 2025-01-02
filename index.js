@@ -7,40 +7,28 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
-// MongoDB connection with retry mechanism
-const connectWithRetry = async () => {
-  try {
-    await mongoose.connect(process.env.MONGO_URL, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-    console.log("Connected to MongoDB");
-  } catch (err) {
-    console.error(
-      "Could not connect to MongoDB, retrying in 5 seconds...",
-      err
-    );
-    setTimeout(connectWithRetry, 5000);
-  }
-};
-connectWithRetry();
+// MongoDB connection
+mongoose
+  .connect(process.env.MONGO_URL)
+  .then(() => console.log("Connected to MongoDB"))
+  .catch((err) => console.error("Could not connect to MongoDB", err));
 
 // Define Schemas and Models
 const companySchema = new mongoose.Schema({
   name: { type: String, required: true },
   location: { type: String, required: true },
-  linkedInProfile: { type: String },
-  emails: [{ type: String, validate: /^\S+@\S+\.\S+$/ }],
-  phoneNumbers: [{ type: String, validate: /^[0-9]{10}$/ }],
-  comments: { type: String },
-  communicationPeriodicity: { type: String },
+  linkedInProfile: String,
+  emails: [String],
+  phoneNumbers: [String],
+  comments: String,
+  communicationPeriodicity: String,
   lastCommunications: [
     {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Communication",
     },
   ],
-  nextCommunication: { type: String },
+  nextCommunication: String,
 });
 
 const communicationSchema = new mongoose.Schema({
@@ -51,8 +39,8 @@ const communicationSchema = new mongoose.Schema({
   },
   communicationType: { type: String, required: true },
   communicationDate: { type: String, required: true },
-  notes: { type: String },
-  nextCommunication: { type: String },
+  notes: String,
+  nextCommunication: String,
 });
 
 const nextCommunicationSchema = new mongoose.Schema({
@@ -151,17 +139,18 @@ app.get("/api/communications", async (req, res) => {
   }
 });
 
+
 // Log a new communication action for a company
 app.post("/api/communications", async (req, res) => {
-  try {
-    const {
-      companyId,
-      communicationType,
-      communicationDate,
-      notes,
-      nextCommunication,
-    } = req.body;
+  const {
+    companyId,
+    communicationType,
+    communicationDate,
+    notes,
+    nextCommunication,
+  } = req.body;
 
+  try {
     const company = await Company.findById(companyId);
     if (!company) return res.status(404).json({ message: "Company not found" });
 
@@ -174,22 +163,114 @@ app.post("/api/communications", async (req, res) => {
     });
 
     await communication.save();
+
     company.lastCommunications.push(communication._id);
     company.nextCommunication = nextCommunication || null;
 
     await company.save();
 
+    const updatedCompany = await Company.findById(companyId).populate(
+      "lastCommunications"
+    );
     res
-      .status(201)
-      .json({ message: "Communication logged successfully", communication });
+      .status(200)
+      .json({ message: "Communication logged successfully", updatedCompany });
   } catch (error) {
     res.status(400).json({ message: "Error logging communication", error });
   }
 });
 
-// Remaining Endpoints (NextCommunication handling)
-// ... no errors in original version; keep the same.
+// Delete a communication
+app.delete("/api/communications/:id", async (req, res) => {
+  try {
+    const deletedCommunication = await Communication.findByIdAndDelete(
+      req.params.id
+    );
+    if (!deletedCommunication)
+      return res.status(404).json({ message: "Communication not found" });
+    res
+      .status(200)
+      .json({
+        message: "Communication deleted successfully",
+        deletedCommunication,
+      });
+  } catch (error) {
+    res.status(500).json({ message: "Error deleting communication", error });
+  }
+});
+
+// Create next communication
+app.post("/api/next-communications", async (req, res) => {
+  try {
+    const nextComm = new NextCommunication(req.body);
+    await nextComm.save();
+    res.status(201).json(nextComm);
+  } catch (error) {
+    res
+      .status(400)
+      .json({ message: "Error creating next communication", error });
+  }
+});
+
+// Get next communications for a company
+app.get("/api/next-communications/:companyId", async (req, res) => {
+  try {
+    const nextComms = await NextCommunication.find({
+      companyId: req.params.companyId,
+      isCompleted: false,
+    });
+    res.status(200).json(nextComms);
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error fetching next communications", error });
+  }
+});
+
+// Update a next communication
+app.put("/api/next-communications/:id", async (req, res) => {
+  try {
+    const updated = await NextCommunication.findByIdAndUpdate(
+      req.params.id,
+      req.body,
+      { new: true, runValidators: true }
+    );
+    if (!updated)
+      return res.status(404).json({ message: "Next communication not found" });
+    res.status(200).json(updated);
+  } catch (error) {
+    res
+      .status(400)
+      .json({ message: "Error updating next communication", error });
+  }
+});
+
+// Cancel next communication
+app.delete("/api/next-communications/:id", async (req, res) => {
+  try {
+    const deleted = await NextCommunication.findByIdAndDelete(req.params.id);
+    if (!deleted)
+      return res.status(404).json({ message: "Next communication not found" });
+    res
+      .status(200)
+      .json({ message: "Next communication cancelled successfully" });
+  } catch (error) {
+    res
+      .status(500)
+      .json({ message: "Error cancelling next communication", error });
+  }
+});
+
+// Fetch all active next communications
+app.get("/api/next-communications", async (req, res) => {
+  try {
+    const schedules = await NextCommunication.find({ isCompleted: false });
+    res.status(200).json(schedules);
+  } catch (error) {
+    res.status(500).json({ message: "Error fetching schedules", error });
+  }
+});
 
 // Server initialization
-const PORT = process.env.PORT || 5000;
+const PORT = 5000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
