@@ -8,9 +8,7 @@ app.use(cors());
 
 // MongoDB connection
 mongoose
-  .connect(
-    "mongodb+srv://<username>:<password>@cluster0.mongodb.net/calendarApp?retryWrites=true&w=majority"
-  )
+  .connect(process.env.MONGO_URL)
   .then(() => console.log("Connected to MongoDB"))
   .catch((err) => console.error("Could not connect to MongoDB", err));
 
